@@ -1,168 +1,218 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Wrist Grapple VR V3</title>
+<title>Wrist Grapple VR V4</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#050812;color:#fff;font-family:system-ui}
-#panel{position:absolute;z-index:5;left:14px;top:14px;right:14px;max-width:430px;padding:15px;border:1px solid #3b4658;border-radius:15px;background:#0b1220e8}
-h2{margin:0 0 5px;font-size:19px}.muted{color:#a8b5c5;font-size:13px;line-height:1.45}
-button{margin-top:12px;min-height:48px;padding:0 18px;border:0;border-radius:12px;background:#6ee7b7;color:#05271d;font-weight:800;font-size:16px}
-#msg{margin-top:8px;font-size:13px;color:#c7d4e2}
+html,body{margin:0;height:100%;overflow:hidden;background:#07101b;color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+#ui{position:absolute;z-index:10;left:14px;top:14px;width:min(390px,calc(100% - 28px));padding:15px 16px;border:1px solid #425064;border-radius:15px;background:rgba(8,16,28,.94)}
+h2{margin:0 0 6px;font-size:19px}.small{font-size:13px;line-height:1.45;color:#b8c6d6}
+button{width:100%;min-height:50px;margin-top:12px;border:0;border-radius:11px;background:#6ee7b7;color:#06271c;font-weight:800;font-size:16px}
+#status{margin-top:9px;font-size:13px;color:#d4e1ed}
 </style>
 </head>
 <body>
-<div id="panel">
-<h2>🪝 Wrist Grapple VR — Quest V3</h2>
-<div class="muted">Quest-optimized WebXR test. Point your controller at a cyan anchor and hold the trigger to pull. Release to launch.</div>
+<div id="ui">
+<h2>🪝 Wrist Grapple V4</h2>
+<div class="small">Quest-safe test scene. In VR, aim a controller at a cyan anchor and hold the trigger to pull toward it. Release to launch.</div>
 <button id="enter">ENTER VR</button>
-<div id="msg">Checking WebXR…</div>
+<div id="status">Loading 3D scene…</div>
 </div>
+
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 
+const status=document.getElementById("status");
+const enter=document.getElementById("enter");
+
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x050812);
-scene.fog=new THREE.Fog(0x050812,8,55);
+scene.background=new THREE.Color(0x07101b);
 
-const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.03,100);
-camera.position.set(0,1.6,3);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.05,100);
+camera.position.set(0,1.6,4);
 
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
-renderer.setSize(innerWidth,innerHeight);
+const renderer=new THREE.WebGLRenderer({
+ antialias:false,
+ alpha:false,
+ powerPreference:"default"
+});
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth,innerHeight,false);
 renderer.xr.enabled=true;
 document.body.appendChild(renderer.domElement);
 
-const msg=document.querySelector("#msg");
-const enter=document.querySelector("#enter");
+const rig=new THREE.Group();
+rig.position.set(0,0,4);
+scene.add(rig);
+rig.add(camera);
 
-let session=null;
-async function enterVR(){
- msg.textContent="Requesting VR…";
- try{
-   if(!navigator.xr){msg.textContent="This browser does not expose WebXR. Update Quest Browser and try again.";return}
-   const ok=await navigator.xr.isSessionSupported("immersive-vr");
-   if(!ok){msg.textContent="Quest reports immersive VR is unavailable on this page.";return}
-   session=await navigator.xr.requestSession("immersive-vr",{
-     requiredFeatures:["local-floor"],
-     optionalFeatures:["bounded-floor","hand-tracking"]
-   });
-   renderer.xr.setReferenceSpaceType("local-floor");
-   await renderer.xr.setSession(session);
-   document.querySelector("#panel").style.display="none";
- }catch(e){
-   msg.textContent="VR could not start: "+(e?.message||e);
- }
-}
-enter.addEventListener("click",enterVR);
+// Very simple lighting/objects for maximum Quest Browser compatibility.
+scene.add(new THREE.AmbientLight(0xffffff,2.0));
 
-if(navigator.xr){
- navigator.xr.isSessionSupported("immersive-vr").then(ok=>{
-   msg.textContent=ok?"WebXR VR is available — press ENTER VR.":"WebXR immersive VR is not available.";
- }).catch(()=>msg.textContent="Could not check WebXR.");
-}else msg.textContent="WebXR is not available in this browser.";
+const floor=new THREE.Mesh(
+ new THREE.PlaneGeometry(30,30),
+ new THREE.MeshBasicMaterial({color:0x182333})
+);
+floor.rotation.x=-Math.PI/2;
+scene.add(floor);
 
-scene.add(new THREE.HemisphereLight(0xbfdcff,0x202838,1.8));
-const lamp=new THREE.PointLight(0x73e9ff,25,30);lamp.position.set(0,5,2);scene.add(lamp);
+const grid=new THREE.GridHelper(30,30,0x587086,0x314052);
+grid.position.y=.01;
+scene.add(grid);
 
-const floor=new THREE.Mesh(new THREE.CylinderGeometry(14,14,.18,64),new THREE.MeshStandardMaterial({color:0x151d29,roughness:.9}));
-floor.position.y=-.09;scene.add(floor);
-scene.add(new THREE.GridHelper(28,28,0x3b4655,0x252d39));
-
-function box(x,y,z,sx,sy,sz){
- const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshStandardMaterial({color:0x202b3a,roughness:.8}));
+function makeBox(x,y,z,s,c){
+ const m=new THREE.Mesh(
+  new THREE.BoxGeometry(s,s,s),
+  new THREE.MeshBasicMaterial({color:c})
+ );
  m.position.set(x,y,z);scene.add(m);
 }
-box(-4,1,-4,3,.5,3);box(4,2,-7,3,.5,3);box(-5,3,-11,4,.5,3);box(3,4,-14,4,.5,4);box(0,6,-19,7,.5,3);
+makeBox(-3,1,-4,2,0x3b536e);
+makeBox(3,1,-6,2,0x3b536e);
+makeBox(-4,2,-9,2.5,0x3b536e);
+makeBox(4,2.5,-11,3,0x3b536e);
 
 const anchors=[];
-function addAnchor(x,y,z){
- const g=new THREE.Group();g.position.set(x,y,z);
- const s=new THREE.Mesh(new THREE.SphereGeometry(.18,16,16),new THREE.MeshStandardMaterial({color:0x9af8ff,emissive:0x27b7d0,emissiveIntensity:2.5}));
- const r=new THREE.Mesh(new THREE.TorusGeometry(.31,.035,10,28),new THREE.MeshBasicMaterial({color:0xd0fcff}));
- g.add(s,r);scene.add(g);anchors.push(g);
+function makeAnchor(x,y,z){
+ const g=new THREE.Group();
+ g.position.set(x,y,z);
+ const core=new THREE.Mesh(
+  new THREE.SphereGeometry(.2,12,12),
+  new THREE.MeshBasicMaterial({color:0x00ffff})
+ );
+ const ring=new THREE.Mesh(
+  new THREE.TorusGeometry(.35,.05,8,24),
+  new THREE.MeshBasicMaterial({color:0xffffff})
+ );
+ g.add(core,ring);
+ scene.add(g);anchors.push(g);
 }
-[[-4,3,-4],[-1,5,-6],[4,4,-7],[-5,5,-11],[0,7,-12],[3,6,-15],[-4,7,-18],[4,7,-19],[0,3,-8],[7,3,-10],[-7,3,-8]].forEach(p=>addAnchor(...p));
+[
+ [-3,2.5,-4],[0,3.5,-5],[3,2.5,-6],[-4,4,-9],
+ [0,5,-10],[4,4.5,-11],[-3,5,-14],[3,6,-15]
+].forEach(p=>makeAnchor(...p));
 
-const controllers=[renderer.xr.getController(0),renderer.xr.getController(1)];
+const controllers=[
+ renderer.xr.getController(0),
+ renderer.xr.getController(1)
+];
 controllers.forEach(c=>scene.add(c));
 
-const ropes=[0,1].map(()=>new THREE.Line(
- new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),
- new THREE.LineBasicMaterial({color:0x9ff8ff})
-));
-ropes.forEach(r=>{r.visible=false;scene.add(r)});
+const ropes=[];
+const grapple=[null,null];
+for(let i=0;i<2;i++){
+ const r=new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([
+   new THREE.Vector3(),new THREE.Vector3()
+  ]),
+  new THREE.LineBasicMaterial({color:0x00ffff})
+ );
+ r.visible=false;scene.add(r);ropes.push(r);
+}
 
-const target=[null,null];
-const handPrev=[new THREE.Vector3(),new THREE.Vector3()];
-const handVel=[new THREE.Vector3(),new THREE.Vector3()];
-const hasPrev=[false,false];
 const velocity=new THREE.Vector3();
-let last=performance.now();
+const handPrevious=[new THREE.Vector3(),new THREE.Vector3()];
+const handVelocity=[new THREE.Vector3(),new THREE.Vector3()];
+const havePrevious=[false,false];
 
-function getAnchor(p){
- let best=null,dBest=2.35;
- for(const a of anchors){const q=a.getWorldPosition(new THREE.Vector3());const d=q.distanceTo(p);if(d<dBest){dBest=d;best=a}}
+function nearestAnchor(p){
+ let best=null,bestDistance=2.5;
+ for(const a of anchors){
+  const q=a.getWorldPosition(new THREE.Vector3());
+  const d=q.distanceTo(p);
+  if(d<bestDistance){best=a;bestDistance=d}
+ }
  return best;
 }
 function startGrapple(i){
  const p=controllers[i].getWorldPosition(new THREE.Vector3());
- const a=getAnchor(p);
- if(a){target[i]=a;ropes[i].visible=true}
+ const a=nearestAnchor(p);
+ if(a){grapple[i]=a;ropes[i].visible=true}
 }
 function stopGrapple(i){
- if(!target[i])return;
+ if(!grapple[i])return;
  const cp=controllers[i].getWorldPosition(new THREE.Vector3());
  const pp=camera.getWorldPosition(new THREE.Vector3());
  const away=pp.clone().sub(cp).normalize();
- velocity.addScaledVector(away,1.8);
- velocity.addScaledVector(handVel[i],.25);
- target[i]=null;ropes[i].visible=false;
+ velocity.addScaledVector(away,2.0);
+ velocity.addScaledVector(handVelocity[i],.18);
+ grapple[i]=null;ropes[i].visible=false;
 }
 controllers.forEach((c,i)=>{
  c.addEventListener("selectstart",()=>startGrapple(i));
  c.addEventListener("selectend",()=>stopGrapple(i));
 });
 
+let vrSession=null;
+async function startVR(){
+ try{
+  status.textContent="Starting VR…";
+  if(!navigator.xr)throw new Error("WebXR is not available in this browser.");
+  const supported=await navigator.xr.isSessionSupported("immersive-vr");
+  if(!supported)throw new Error("Quest says immersive VR is unavailable.");
+  vrSession=await navigator.xr.requestSession("immersive-vr",{
+   optionalFeatures:["local-floor","bounded-floor"]
+  });
+  vrSession.addEventListener("end",()=>{
+   vrSession=null;
+   status.textContent="VR ended.";
+   enter.style.display="block";
+  });
+  renderer.xr.setReferenceSpaceType("local-floor");
+  await renderer.xr.setSession(vrSession);
+  enter.style.display="none";
+  document.getElementById("ui").style.display="none";
+ }catch(e){
+  status.textContent="VR error: "+(e&&e.message?e.message:String(e));
+ }
+}
+enter.addEventListener("click",startVR);
+
 function physics(dt){
- const pp=camera.getWorldPosition(new THREE.Vector3());
  for(let i=0;i<2;i++){
-   const hp=controllers[i].getWorldPosition(new THREE.Vector3());
-   if(hasPrev[i])handVel[i].copy(hp).sub(handPrev[i]).multiplyScalar(1/Math.max(dt,.001));
-   handPrev[i].copy(hp);hasPrev[i]=true;
-   if(!target[i])continue;
-   const ap=target[i].getWorldPosition(new THREE.Vector3());
-   const dir=ap.clone().sub(pp);const d=dir.length();
-   if(d>.45){
-     dir.normalize();
-     const desired=Math.min(11,3.5+d*1.7);
-     const along=velocity.dot(dir);
-     velocity.addScaledVector(dir,(desired-along)*Math.min(1,dt*6));
-   }
-   const cp=hp,arr=ropes[i].geometry.attributes.position.array;
-   arr[0]=cp.x;arr[1]=cp.y;arr[2]=cp.z;arr[3]=ap.x;arr[4]=ap.y;arr[5]=ap.z;
-   ropes[i].geometry.attributes.position.needsUpdate=true;
+  const p=controllers[i].getWorldPosition(new THREE.Vector3());
+  if(havePrevious[i])handVelocity[i].copy(p).sub(handPrevious[i]).multiplyScalar(1/Math.max(dt,.001));
+  handPrevious[i].copy(p);havePrevious[i]=true;
+  if(!grapple[i])continue;
+  const a=grapple[i].getWorldPosition(new THREE.Vector3());
+  const playerPos=camera.getWorldPosition(new THREE.Vector3());
+  const d=a.clone().sub(playerPos);
+  const len=d.length();
+  if(len>.5){
+   d.normalize();
+   const desired=Math.min(9,3+len*1.5);
+   const current=velocity.dot(d);
+   velocity.addScaledVector(d,(desired-current)*Math.min(1,dt*5));
+  }
+  const arr=ropes[i].geometry.attributes.position.array;
+  arr[0]=p.x;arr[1]=p.y;arr[2]=p.z;
+  arr[3]=a.x;arr[4]=a.y;arr[5]=a.z;
+  ropes[i].geometry.attributes.position.needsUpdate=true;
  }
  velocity.y-=2.0*dt;
- if(pp.y<=.02&&velocity.y<0)velocity.y=0;
- const damp=(target[0]||target[1])?.12:.025;
- velocity.multiplyScalar(Math.pow(damp,dt));
- const rig=camera.parent;
+ velocity.multiplyScalar(Math.pow((grapple[0]||grapple[1])?.18:.025,dt));
  rig.position.addScaledVector(velocity,dt);
- if(rig.position.y<0)rig.position.y=0;
- rig.position.x=THREE.MathUtils.clamp(rig.position.x,-11,11);
- rig.position.z=THREE.MathUtils.clamp(rig.position.z,-25,7);
+ if(rig.position.y<0){rig.position.y=0;if(velocity.y<0)velocity.y=0}
+ rig.position.x=THREE.MathUtils.clamp(rig.position.x,-10,10);
+ rig.position.z=THREE.MathUtils.clamp(rig.position.z,-22,7);
 }
 
-function loop(){
- const now=performance.now(),dt=Math.min((now-last)/1000,.033);last=now;
+let last=performance.now();
+function animate(){
+ const now=performance.now();
+ const dt=Math.min((now-last)/1000,.033);last=now;
  physics(dt);
  renderer.render(scene,camera);
 }
-renderer.setAnimationLoop(loop);
-addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+renderer.setAnimationLoop(animate);
+
+status.textContent="3D scene loaded. Press ENTER VR.";
+addEventListener("resize",()=>{
+ renderer.setSize(innerWidth,innerHeight,false);
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+});
 </script>
 </body>
 </html>
