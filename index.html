@@ -1,362 +1,244 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Wrist Grapple Movement Lab V6</title>
+<title>Wrist Grapple VR — V9</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#050912;color:#eef7ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
-#ui{position:absolute;z-index:20;left:14px;top:14px;width:min(430px,calc(100% - 28px));padding:16px;border:1px solid #43536a;border-radius:16px;background:rgba(6,12,22,.95)}
-h1{font-size:20px;margin:0 0 6px}.desc{font-size:13px;line-height:1.5;color:#b9c7d7}
-button{width:100%;min-height:50px;margin-top:12px;border:0;border-radius:11px;background:#6ee7b7;color:#05261c;font-weight:850;font-size:16px}
-#status{margin-top:9px;font-size:13px;color:#d4e1ee}
-.tip{margin-top:10px;padding-top:10px;border-top:1px solid #293648;font-size:12px;line-height:1.5;color:#9fb0c2}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#05080b;font-family:system-ui;color:#dff8ff}
+#ui{position:fixed;left:14px;top:14px;z-index:10;background:rgba(5,10,14,.86);border:1px solid #31515e;border-radius:12px;padding:12px 14px;max-width:360px;line-height:1.4}
+#ui b{color:#8cecff} #enter{margin-top:10px;width:100%;padding:11px;border:0;border-radius:9px;background:#67dcff;color:#071016;font-weight:800}
+#hud{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9;background:rgba(5,10,14,.72);border:1px solid #31515e;border-radius:10px;padding:8px 12px;font:600 13px system-ui;pointer-events:none}
 </style>
 </head>
 <body>
 <div id="ui">
-<h1>🪝 Wrist Grapple Movement Lab — V6</h1>
-<div class="desc">A proper traversal course for testing physical arm locomotion, grapple tension, swings, launches, wall push-offs and dual grapples.</div>
+<b>WRIST GRAPPLE VR — V9</b><br>
+Move by sweeping your hands backward.<br>
+Point either controller at a surface and press <b>grip</b> to grapple.<br>
+Release to keep momentum. Both hands work independently.<br>
+<b>Blue surfaces</b> are grappleable. Orange pads are goals.
 <button id="enter">ENTER VR</button>
-<div id="status">Loading…</div>
-<div class="tip"><b>Test course:</b> Start pad → arm-propulsion lane → wall run → grapple canyon → dual-grapple tower → long launch → landing pad.</div>
 </div>
+<div id="hud">SPEED 0.0 · L — · R —</div>
 
 <script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
-const ui=document.getElementById("ui"), enter=document.getElementById("enter"), status=document.getElementById("status");
-
-/* ===== Renderer ===== */
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x050912);
-scene.fog=new THREE.Fog(0x050912,16,85);
-
-const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.03,120);
-camera.position.set(0,1.65,5);
-
-const renderer=new THREE.WebGLRenderer({antialias:false,alpha:false,powerPreference:"default"});
+const renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:"high-performance"});
 renderer.setPixelRatio(1);
-renderer.setSize(innerWidth,innerHeight,false);
+renderer.setSize(innerWidth,innerHeight);
 renderer.xr.enabled=true;
+renderer.xr.setReferenceSpaceType("local-floor");
 document.body.appendChild(renderer.domElement);
 
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x05080b);
+scene.fog=new THREE.Fog(0x05080b,18,85);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.03,120);
 const rig=new THREE.Group();
-rig.position.set(0,0,6);
-scene.add(rig);
+rig.position.set(0,0,4);
 rig.add(camera);
+scene.add(rig);
 
-async function enterVR(){
- try{
-  status.textContent="Starting Quest VR…";
-  if(!navigator.xr)throw Error("WebXR unavailable.");
-  if(!(await navigator.xr.isSessionSupported("immersive-vr")))throw Error("Immersive VR unavailable.");
-  const s=await navigator.xr.requestSession("immersive-vr",{requiredFeatures:["local-floor"],optionalFeatures:["bounded-floor"]});
-  renderer.xr.setReferenceSpaceType("local-floor");
-  await renderer.xr.setSession(s);
-  s.addEventListener("end",()=>{ui.style.display="block";enter.style.display="block";status.textContent="VR ended.";});
-  ui.style.display="none";
- }catch(e){status.textContent="VR error: "+(e?.message||String(e));}
-}
-enter.addEventListener("click",enterVR);
-
-/* ===== Visual helpers ===== */
-scene.add(new THREE.AmbientLight(0xffffff,1.8));
-const skyLight=new THREE.DirectionalLight(0xffffff,1.4);
-skyLight.position.set(4,12,5);scene.add(skyLight);
-
-const floorMat=new THREE.MeshBasicMaterial({color:0x121b28});
-const wallMat=new THREE.MeshBasicMaterial({color:0x26364a});
-const edgeMat=new THREE.LineBasicMaterial({color:0x63809b});
-const cyanMat=new THREE.MeshBasicMaterial({color:0x00ffff});
-const whiteMat=new THREE.MeshBasicMaterial({color:0xffffff});
-
-function box(x,y,z,sx,sy,sz,mat=floorMat){
- const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);
- m.position.set(x,y,z);scene.add(m);return m;
-}
-function ring(x,y,z,r=.7){
- const r1=new THREE.Mesh(new THREE.TorusGeometry(r,.035,10,28),new THREE.MeshBasicMaterial({color:0x8ffaff}));
- r1.position.set(x,y,z);scene.add(r1);
-}
-function labelPad(x,y,z,textColor=0x9cfbff){
- const p=box(x,y,z,3,.12,3,new THREE.MeshBasicMaterial({color:0x1b3140}));
- const r=new THREE.Mesh(new THREE.TorusGeometry(1.2,.05,10,32),new THREE.MeshBasicMaterial({color:textColor}));
- r.rotation.x=Math.PI/2;r.position.set(x,y+.08,z);scene.add(r);
- return p;
-}
-
-/* ===== Large traversal course ===== */
-// Start / warm-up
-labelPad(0,0,6);
-box(0,-.3,-1,10,.6,10);
-for(let x=-4;x<=4;x+=2){box(x,1,-4,1,.4,1.2,new THREE.MeshBasicMaterial({color:0x30445a}))}
-
-// Wall-propulsion lane
-box(-7,2,-8,1,4,13,wallMat);
-box(7,2,-8,1,4,13,wallMat);
-for(let z=-3;z>=-14;z-=2){ring(-6.2,2.0,z,.42);ring(6.2,2.0,z,.42)}
-
-// Grapple canyon floor
-box(0,-.3,-19,18,.6,14);
-box(-9,2,-20,1,4,16,wallMat);
-box(9,2,-20,1,4,16,wallMat);
-
-// Platforms / alternate routes
-box(-5,2,-18,4,.6,3,wallMat);
-box(5,3,-21,4,.6,3,wallMat);
-box(-4,4,-25,5,.6,3,wallMat);
-box(5,5,-28,4,.6,4,wallMat);
-
-// Tower
-box(0,2,-31,8,.6,8,wallMat);
-box(-4,5,-34,3,.6,3,wallMat);
-box(4,6,-34,3,.6,3,wallMat);
-box(0,8,-38,8,.6,3,wallMat);
-
-// Long-launch runway + landing pad
-box(0,0,-45,12,.5,22);
-box(0,0,-58,10,.4,6,new THREE.MeshBasicMaterial({color:0x203d3c}));
-ring(0,.25,-58,1.8);
-
-/* ===== Grapple anchors: color/position is deliberately easy to read ===== */
-const anchors=[];
-function anchor(x,y,z){
- const g=new THREE.Group();g.position.set(x,y,z);
- const core=new THREE.Mesh(new THREE.SphereGeometry(.2,16,16),cyanMat);
- const tor=new THREE.Mesh(new THREE.TorusGeometry(.34,.05,10,28),whiteMat);
- g.add(core,tor);scene.add(g);anchors.push(g);
-}
-[
- [-6,3,-8],[-2,4,-9],[2,4,-11],[6,3,-8],
- [-6,4,-14],[0,5,-15],[6,4,-14],
- [-6,5,-18],[-3,5,-20],[0,6,-21],[3,6,-19],[6,5,-22],
- [-6,6,-25],[-1,7,-27],[5,7,-28],
- [-3,7,-33],[0,10,-34],[4,8,-35],
- [-5,9,-38],[5,10,-39],[0,10,-43],
- [-4,5,-49],[4,6,-52],[0,8,-55]
-].forEach(p=>anchor(...p));
-
-/* ===== Controllers and rope ===== */
-const controllers=[renderer.xr.getController(0),renderer.xr.getController(1)];
-controllers.forEach(c=>scene.add(c));
-
-const handMeshes=[];
-const handCols=[0x70eaff,0xff9ad8];
-for(let i=0;i<2;i++){
- const h=new THREE.Mesh(new THREE.SphereGeometry(.09,12,12),new THREE.MeshBasicMaterial({color:handCols[i]}));
- scene.add(h);handMeshes.push(h);
-}
-const ropes=[];
-for(let i=0;i<2;i++){
- const pts=Array.from({length:18},()=>new THREE.Vector3());
- const rope=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x8ffaff}));
- rope.visible=false;scene.add(rope);ropes.push(rope);
-}
-
-const grapple=[null,null],ropeLength=[0,0];
-const handPrev=[new THREE.Vector3(),new THREE.Vector3()];
-const handVel=[new THREE.Vector3(),new THREE.Vector3()];
-const handHistory=[[],[]];
+const clock=new THREE.Clock();
 const velocity=new THREE.Vector3();
+const lastPos=[new THREE.Vector3(),new THREE.Vector3()];
+const handVel=[new THREE.Vector3(),new THREE.Vector3()];
+const hands=[];
+const grappleSurfaces=[];
+const raycaster=new THREE.Raycaster();
+const tmpQ=new THREE.Quaternion();
+const tmpV=new THREE.Vector3();
+const tmpV2=new THREE.Vector3();
 
-const cfg={
- armStrokeMin:.70,
- armGain:.085,
- armMaxAccel:7.0,
- armForwardBias:.18,
- airControl:1.0,
- gravity:7.0,
- groundFriction:.055,
- airDrag:.012,
- grappleRange:18,
- grappleStiffness:34,
- grappleDamping:7,
- grappleMaxSpeed:16,
- releaseHandGain:.20,
- maxSpeed:20,
- wallPushStrength:4.0,
- stickAssist:2.2
+const CFG={
+  maxSpeed:15,
+  groundAccel:1.0,
+  handGain:5.0,
+  handMax:20,
+  drag:.035,
+  airDrag:.012,
+  grappleRange:20,
+  spring:18,
+  damping:5.5,
+  minRope:.35
 };
 
-function nearestAnchor(i){
- const p=controllers[i].getWorldPosition(new THREE.Vector3());
- let best=null,bestD=cfg.grappleRange;
- for(const a of anchors){
-  const q=a.getWorldPosition(new THREE.Vector3());
-  const d=q.distanceTo(p);
-  if(d<bestD){best=a;bestD=d}
- }
- return best;
-}
-function startGrapple(i){
- const a=nearestAnchor(i);if(!a)return;
- grapple[i]=a;
- const hp=controllers[i].getWorldPosition(new THREE.Vector3());
- const ap=a.getWorldPosition(new THREE.Vector3());
- ropeLength[i]=Math.max(.65,hp.distanceTo(ap));
- ropes[i].visible=true;
-}
-function stopGrapple(i){
- if(!grapple[i])return;
- velocity.addScaledVector(handVel[i],cfg.releaseHandGain);
- grapple[i]=null;ropes[i].visible=false;
-}
-controllers.forEach((c,i)=>{
- c.addEventListener("selectstart",()=>startGrapple(i));
- c.addEventListener("selectend",()=>stopGrapple(i));
-});
+function mat(c){return new THREE.MeshBasicMaterial({color:c});}
+const floorMat=mat(0x1c252d), wallMat=mat(0x2b3740), cyanMat=mat(0x35d9ff);
+const orangeMat=mat(0xffa23d), darkMat=mat(0x111820), bodyMat=mat(0x33424d), visorMat=mat(0x78e9ff);
 
-/* ===== Arm propulsion ===== */
-function armLocomotion(dt){
- const head=camera.getWorldPosition(new THREE.Vector3());
- let forward=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
- forward.y=0;if(forward.lengthSq()<.001)return;forward.normalize();
+function box(x,y,z,sx,sy,sz,m=floorMat,grapple=true){
+  const o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);
+  o.position.set(x,y,z); o.userData.grapple=grapple;
+  scene.add(o); if(grapple) grappleSurfaces.push(o);
+  return o;
+}
+function ring(x,y,z,r=.5){
+  const o=new THREE.Mesh(new THREE.TorusGeometry(r,.035,8,24),cyanMat);
+  o.position.set(x,y,z); o.rotation.x=Math.PI/2; scene.add(o);
+}
+function label(x,y,z,text){
+  const c=document.createElement("canvas");c.width=512;c.height=96;
+  const g=c.getContext("2d");g.fillStyle="#0a1015";g.fillRect(0,0,512,96);
+  g.fillStyle="#c9f6ff";g.font="bold 30px sans-serif";g.textAlign="center";g.fillText(text,256,60);
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));
+  s.position.set(x,y,z);s.scale.set(4,.75,1);scene.add(s);
+}
 
- for(let i=0;i<2;i++){
-  const v=handVel[i];
-  const speed=v.length();
-  if(speed<cfg.armStrokeMin)continue;
+/* Complete movement test map */
+box(0,-.3,0,18,.6,18); // hub
+box(0,0,-13,8,.4,16); box(-4,2,-13,.35,4,16); box(4,2,-13,.35,4,16);
+for(let i=0;i<8;i++) ring(-3+i*.85,1.5,-7-i*1.4,.4);
+label(0,3,-6,"ARM MOVEMENT");
 
-  // Only the component moving toward the rear of the body contributes.
-  const rear=forward.clone().multiplyScalar(-1);
-  const rearSpeed=v.dot(rear);
-  if(rearSpeed>cfg.armStrokeMin){
-   const power=Math.min(cfg.armMaxAccel,rearSpeed*cfg.armGain*60);
-   velocity.addScaledVector(forward,power*dt);
+box(-13,0,-5,8,.5,16); box(-17,2,-5,.35,4,16); box(-9,2,-5,.35,4,16);
+for(let i=0;i<7;i++) box(-13,1+i*.55,-10+i*1.5,2,.3,2,wallMat);
+label(-13,3,-10,"WALL PUSH");
+
+box(0,-.3,-32,18,.6,20);box(-9,2,-32,.35,4,20);box(9,2,-32,.35,4,20);
+for(let i=0;i<10;i++){let x=i%2?6:-6,y=1.5+(i%5)*1.3,z=-23-i*1.8;box(x,y,z,1.2,.35,1.2,cyanMat);ring(x,y+.6,z,.42)}
+label(0,3,-23,"GRAPPLE CANYON");
+
+box(15,-.3,-28,10,.6,10);
+for(let i=0;i<7;i++){let a=i*Math.PI*2/7,x=15+3*Math.cos(a),z=-28+3*Math.sin(a);box(x,1.2+i*1.1,z,.9,.4,.9,cyanMat);ring(x,1.8+i*1.1,z,.4)}
+box(15,9,-28,5,.4,5,orangeMat);label(15,3,-24,"VERTICAL");
+
+box(0,-.3,-51,10,.6,28);box(-5,2,-51,.35,4,28);box(5,2,-51,.35,4,28);
+for(let i=0;i<8;i++)ring(0,1.6,-39-i*2.5,.48);
+box(0,0,-65,8,.5,5,orangeMat);label(0,2,-65,"FINISH");
+
+/* Visible player body. Camera is at head height; body sits below it. */
+const player=new THREE.Group();
+function capsule(r,l,m){return new THREE.Mesh(new THREE.CapsuleGeometry(r,l,4,8),m)}
+const torso=capsule(.22,.42,bodyMat);torso.position.y=-.48;player.add(torso);
+const head=capsule(.16,.05,darkMat);head.position.y=-.05;player.add(head);
+const visor=new THREE.Mesh(new THREE.BoxGeometry(.2,.07,.035),visorMat);visor.position.set(0,-.04,-.145);player.add(visor);
+const hip=new THREE.Mesh(new THREE.BoxGeometry(.28,.14,.2),darkMat);hip.position.y=-.77;player.add(hip);
+const legL=capsule(.075,.32,bodyMat),legR=capsule(.075,.32,bodyMat);legL.position.set(-.1,-1.02,0);legR.position.set(.1,-1.02,0);player.add(legL,legR);
+const bootL=new THREE.Mesh(new THREE.BoxGeometry(.13,.1,.24),darkMat),bootR=bootL.clone();bootL.position.set(-.1,-1.25,-.04);bootR.position.set(.1,-1.25,-.04);player.add(bootL,bootR);
+rig.add(player);
+
+/* Tracked arms are children of the rig, so they follow real controller poses. */
+function makeHand(i){
+  const g=new THREE.Group();
+  const upper=capsule(.055,.24,bodyMat), fore=capsule(.05,.24,darkMat);
+  const hand=new THREE.Mesh(new THREE.SphereGeometry(.075,10,8),orangeMat);
+  upper.position.y=-.16;fore.position.y=-.37;hand.position.y=-.55;
+  g.add(upper,fore,hand);rig.add(g);
+  return {group:g,upper,fore,hand,grappling:false,point:new THREE.Vector3(),rope:0,ropeLine:null};
+}
+hands.push(makeHand(0),makeHand(1));
+
+function setupController(i){
+  const c=renderer.xr.getController(i);
+  c.addEventListener("connected",e=>{c.userData.inputSource=e.data});
+  c.addEventListener("selectstart",()=>attach(i));
+  c.addEventListener("selectend",()=>release(i));
+  c.addEventListener("squeezestart",()=>attach(i));
+  c.addEventListener("squeezeend",()=>release(i));
+  scene.add(c); hands[i].controller=c;
+  return c;
+}
+setupController(0);setupController(1);
+
+function handWorld(i){
+  const p=new THREE.Vector3();hands[i].controller.getWorldPosition(p);return p;
+}
+function attach(i){
+  const h=hands[i];if(h.grappling)return;
+  const c=h.controller;if(!c)return;
+  const origin=handWorld(i),dir=new THREE.Vector3(0,0,-1);
+  c.getWorldQuaternion(tmpQ);dir.applyQuaternion(tmpQ).normalize();
+  raycaster.set(origin,dir);raycaster.far=CFG.grappleRange;
+  const hits=raycaster.intersectObjects(grappleSurfaces,true);
+  if(!hits.length)return; // no fake air grapple: every grapple has a real point
+  h.grappling=true;h.point.copy(hits[0].point);
+  h.rope=Math.max(CFG.minRope,origin.distanceTo(h.point));
+  const geo=new THREE.BufferGeometry().setFromPoints([origin,h.point]);
+  h.ropeLine=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x72eaff}));
+  scene.add(h.ropeLine);
+}
+function release(i){
+  const h=hands[i];if(!h.grappling)return;
+  h.grappling=false;
+  if(h.ropeLine){scene.remove(h.ropeLine);h.ropeLine.geometry.dispose();h.ropeLine.material.dispose();h.ropeLine=null}
+}
+function updateHands(dt){
+  for(let i=0;i<2;i++){
+    const h=hands[i],p=handWorld(i);
+    handVel[i].copy(p).sub(lastPos[i]).multiplyScalar(1/Math.max(dt,.001));
+    lastPos[i].copy(p);
+    h.group.position.copy(p);
+    // Arms point from shoulders toward tracked hands.
+    const shoulder=new THREE.Vector3(i? .25:-.25,-.22,-.02); // local rig
+    const localHand=rig.worldToLocal(p.clone());
+    const armVec=localHand.clone().sub(shoulder),len=armVec.length();
+    if(len>.05){
+      const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),armVec.normalize());
+      h.upper.position.copy(shoulder).addScaledVector(armVec,len*.30);
+      h.upper.quaternion.copy(q);
+      h.fore.position.copy(shoulder).addScaledVector(armVec,len*.72);
+      h.fore.quaternion.copy(q);
+      h.hand.position.copy(localHand);
+    }
+    // Physical arm propulsion: only a backward stroke relative to head view.
+    const forward=new THREE.Vector3(0,0,-1).applyQuaternion(camera.getWorldQuaternion(tmpQ)).setY(0).normalize();
+    const backward=forward.clone().negate();
+    const rear=Math.max(0,handVel[i].dot(backward));
+    const lateral=handVel[i].clone().addScaledVector(backward,-handVel[i].dot(backward));
+    const power=Math.min(CFG.handMax,Math.pow(rear,1.25)*CFG.handGain);
+    velocity.addScaledVector(forward,power*dt);
+    // Small steering from asymmetric strokes.
+    velocity.x+=lateral.x*0.025*dt;
+    velocity.z+=lateral.z*0.025*dt;
+
+    if(h.grappling){
+      const ropeVec=h.point.clone().sub(p),d=ropeVec.length();
+      if(d>h.rope){
+        const n=ropeVec.normalize();
+        const stretch=d-h.rope;
+        const radial=velocity.dot(n);
+        const force=stretch*CFG.spring-radial*CFG.damping;
+        velocity.addScaledVector(n,force*dt);
+      }
+      if(h.ropeLine){
+        h.ropeLine.geometry.setFromPoints([p,h.point]);
+      }
+    }
   }
-
-  // A small side component lets the user steer using asymmetric arm strokes.
-  const side=new THREE.Vector3(-forward.z,0,forward.x);
-  const sideSpeed=v.dot(side);
-  if(Math.abs(sideSpeed)>.9)
-    velocity.addScaledVector(side,THREE.MathUtils.clamp(sideSpeed*.018,-.35,.35));
- }
 }
-
-/* ===== Stick assist ===== */
-function stickAssist(dt){
- const s=renderer.xr.getSession();if(!s)return;
- for(const src of s.inputSources){
-  if(!src.gamepad||src.handedness!=="left")continue;
-  const a=src.gamepad.axes;if(!a||a.length<2)continue;
-  const x=a.length>=4?a[2]:a[0], y=a.length>=4?a[3]:a[1];
-  if(Math.hypot(x,y)<.1)continue;
-  let f=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);f.y=0;f.normalize();
-  let r=new THREE.Vector3(-f.z,0,f.x);
-  const m=f.multiplyScalar(-y).add(r.multiplyScalar(x));
-  if(m.lengthSq()>0.001)velocity.addScaledVector(m.normalize(),cfg.stickAssist*dt);
- }
+function updatePhysics(dt){
+  const drag=Math.pow(1-CFG.drag,dt*60);
+  velocity.multiplyScalar(drag);
+  if(velocity.length()>CFG.maxSpeed)velocity.setLength(CFG.maxSpeed);
+  rig.position.addScaledVector(velocity,dt);
+  // Simple world bounds.
+  rig.position.x=THREE.MathUtils.clamp(rig.position.x,-8.2,8.2);
+  rig.position.z=THREE.MathUtils.clamp(rig.position.z,-67,8);
+  if(rig.position.y<0){rig.position.y=0;velocity.y=Math.max(0,velocity.y);}
 }
-
-/* ===== Grapple spring + swinging ===== */
-function grapplePhysics(dt){
- const player=camera.getWorldPosition(new THREE.Vector3());
- for(let i=0;i<2;i++){
-  if(!grapple[i])continue;
-  const ap=grapple[i].getWorldPosition(new THREE.Vector3());
-  const hp=controllers[i].getWorldPosition(new THREE.Vector3());
-  const to=ap.clone().sub(player);
-  const d=to.length();
-  const dir=d>.001?to.clone().multiplyScalar(1/d):new THREE.Vector3();
-
-  // Spring only engages beyond rope length. This leaves tangential velocity alone,
-  // allowing an actual pendulum/swing instead of a straight-line zip.
-  const stretch=d-ropeLength[i];
-  if(stretch>0){
-   const radial=velocity.dot(dir);
-   const force=cfg.grappleStiffness*stretch-cfg.grappleDamping*radial;
-   velocity.addScaledVector(dir,force*dt);
-  }
-
-  // Limit extreme outward velocity while preserving tangential swing.
-  const radial=velocity.dot(dir);
-  if(radial<0 && d>ropeLength[i]+.2)
-    velocity.addScaledVector(dir,-radial*.18);
-
-  // Rope visualization.
-  const arr=ropes[i].geometry.attributes.position.array;
-  for(let n=0;n<18;n++){
-   const t=n/17;
-   const q=hp.clone().lerp(ap,t);
-   q.y-=Math.sin(Math.PI*t)*Math.min(.28,d*.015);
-   arr[n*3]=q.x;arr[n*3+1]=q.y;arr[n*3+2]=q.z;
-  }
-  ropes[i].geometry.attributes.position.needsUpdate=true;
- }
+function loop(){
+  const dt=Math.min(clock.getDelta(),.033);
+  updateHands(dt);
+  updatePhysics(dt);
+  const speed=velocity.length();
+  document.getElementById("hud").textContent=`SPEED ${speed.toFixed(1)} · L ${hands[0].grappling?"GRAPPLE":"—"} · R ${hands[1].grappling?"GRAPPLE":"—"}`;
+  renderer.render(scene,camera);
 }
+renderer.setAnimationLoop(loop);
 
-/* ===== Soft wall/floor push ===== */
-const surfaces=[
- {x:-7,y:2,z:-8,sx:1,sy:4,sz:13},
- {x:7,y:2,z:-8,sx:1,sy:4,sz:13},
- {x:-9,y:2,z:-20,sx:1,sy:4,sz:16},
- {x:9,y:2,z:-20,sx:1,sy:4,sz:16}
-];
-function wallPush(){
- const p=camera.getWorldPosition(new THREE.Vector3());
- for(const b of surfaces){
-  const dx=p.x-b.x,dy=p.y-b.y,dz=p.z-b.z;
-  const hx=b.sx/2+.35,hy=b.sy/2+.55,hz=b.sz/2+.35;
-  if(Math.abs(dx)<hx&&Math.abs(dy)<hy&&Math.abs(dz)<hz){
-   const px=hx-Math.abs(dx),py=hy-Math.abs(dy),pz=hz-Math.abs(dz);
-   let n;
-   if(px<=py&&px<=pz)n=new THREE.Vector3(Math.sign(dx)||1,0,0);
-   else if(py<=pz)n=new THREE.Vector3(0,Math.sign(dy)||1,0);
-   else n=new THREE.Vector3(0,0,Math.sign(dz)||1);
-   velocity.addScaledVector(n,cfg.wallPushStrength*.02);
-  }
- }
-}
-
-/* ===== Update ===== */
-let last=performance.now();
-function update(){
- const now=performance.now();
- const dt=Math.min(.033,(now-last)/1000);last=now;
-
- for(let i=0;i<2;i++){
-  const p=controllers[i].getWorldPosition(new THREE.Vector3());
-  if(handHistory[i].length){
-   handVel[i].copy(p).sub(handPrev[i]).multiplyScalar(1/Math.max(dt,.001));
-  }else handVel[i].set(0,0,0);
-  handPrev[i].copy(p);
-  handHistory[i].push(p.clone());
-  if(handHistory[i].length>4)handHistory[i].shift();
-  handMeshes[i].position.copy(p);
- }
-
- armLocomotion(dt);
- stickAssist(dt);
- grapplePhysics(dt);
- wallPush();
-
- const playerPos=camera.getWorldPosition(new THREE.Vector3());
- const grounded=playerPos.y<.045;
-
- if(!grounded)velocity.y-=cfg.gravity*dt;
- const damping=grounded?cfg.groundFriction:cfg.airDrag;
- velocity.multiplyScalar(Math.pow(damping,dt));
-
- const speed=velocity.length();
- if(speed>cfg.maxSpeed)velocity.multiplyScalar(cfg.maxSpeed/speed);
-
- rig.position.addScaledVector(velocity,dt);
-
- if(rig.position.y<0){rig.position.y=0;if(velocity.y<0)velocity.y=0}
- rig.position.x=THREE.MathUtils.clamp(rig.position.x,-12,12);
- rig.position.z=THREE.MathUtils.clamp(rig.position.z,-65,10);
-
- renderer.render(scene,camera);
-}
-renderer.setAnimationLoop(update);
-status.textContent="Movement system ready. Press ENTER VR.";
-
-addEventListener("resize",()=>{
- camera.aspect=innerWidth/innerHeight;
- camera.updateProjectionMatrix();
- renderer.setSize(innerWidth,innerHeight,false);
-});
+document.getElementById("enter").onclick=async()=>{
+  if(!navigator.xr){alert("WebXR is not available in this browser.");return}
+  try{
+    const session=await navigator.xr.requestSession("immersive-vr",{requiredFeatures:["local-floor"]});
+    renderer.xr.setSession(session);
+    document.getElementById("ui").style.display="none";
+  }catch(e){alert("VR could not start: "+e.message)}
+};
+addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 </body>
 </html>
