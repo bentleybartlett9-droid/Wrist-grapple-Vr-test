@@ -1,23 +1,23 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Wrist Grapple VR — V9</title>
+<title>Wrist Grapple VR — V10</title>
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#05080b;font-family:system-ui;color:#dff8ff}
-#ui{position:fixed;left:14px;top:14px;z-index:10;background:rgba(5,10,14,.86);border:1px solid #31515e;border-radius:12px;padding:12px 14px;max-width:360px;line-height:1.4}
-#ui b{color:#8cecff} #enter{margin-top:10px;width:100%;padding:11px;border:0;border-radius:9px;background:#67dcff;color:#071016;font-weight:800}
-#hud{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9;background:rgba(5,10,14,.72);border:1px solid #31515e;border-radius:10px;padding:8px 12px;font:600 13px system-ui;pointer-events:none}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#060a0e;font-family:system-ui,sans-serif}
+#panel{position:fixed;z-index:20;left:18px;top:18px;width:min(390px,calc(100% - 36px));padding:18px;border:1px solid #314954;border-radius:16px;background:rgba(7,12,17,.92);color:#d9f5fb;box-shadow:0 12px 40px #0008}
+#panel h1{font-size:20px;margin:0 0 8px;color:#9beeff}#panel p{font-size:14px;line-height:1.45;margin:7px 0}
+#enter{width:100%;padding:13px;margin-top:10px;border:0;border-radius:10px;background:#76e5ff;color:#061016;font-weight:800;font-size:15px}
+#hud{position:fixed;z-index:19;left:50%;bottom:16px;transform:translateX(-50%);padding:8px 12px;border:1px solid #38515b;border-radius:10px;background:#071017c9;color:#d9f8ff;font:600 13px system-ui;pointer-events:none}
 </style>
 </head>
 <body>
-<div id="ui">
-<b>WRIST GRAPPLE VR — V9</b><br>
-Move by sweeping your hands backward.<br>
-Point either controller at a surface and press <b>grip</b> to grapple.<br>
-Release to keep momentum. Both hands work independently.<br>
-<b>Blue surfaces</b> are grappleable. Orange pads are goals.
+<div id="panel">
+<h1>WRIST GRAPPLE VR — V10</h1>
+<p><b>Hand locomotion:</b> pull/sweep both hands backwards to launch yourself.</p>
+<p><b>Grapple:</b> point either controller at a blue surface and press <b>grip</b> or <b>trigger</b>. Release to launch with your momentum.</p>
+<p>Both hands can grapple at once. The map is built specifically to test movement.</p>
 <button id="enter">ENTER VR</button>
 </div>
 <div id="hud">SPEED 0.0 · L — · R —</div>
@@ -26,217 +26,164 @@ Release to keep momentum. Both hands work independently.<br>
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
 const renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:"high-performance"});
-renderer.setPixelRatio(1);
-renderer.setSize(innerWidth,innerHeight);
-renderer.xr.enabled=true;
-renderer.xr.setReferenceSpaceType("local-floor");
-document.body.appendChild(renderer.domElement);
+renderer.setPixelRatio(1); renderer.setSize(innerWidth,innerHeight); renderer.xr.enabled=true;
+renderer.xr.setReferenceSpaceType("local-floor"); document.body.appendChild(renderer.domElement);
 
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x05080b);
-scene.fog=new THREE.Fog(0x05080b,18,85);
+scene.background=new THREE.Color(0x070b10);
+scene.fog=new THREE.Fog(0x070b10,20,90);
 
-const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.03,120);
-const rig=new THREE.Group();
-rig.position.set(0,0,4);
-rig.add(camera);
-scene.add(rig);
+const rig=new THREE.Group(); rig.position.set(0,0,7); scene.add(rig);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.03,120); camera.position.set(0,1.65,0); rig.add(camera);
 
-const clock=new THREE.Clock();
-const velocity=new THREE.Vector3();
-const lastPos=[new THREE.Vector3(),new THREE.Vector3()];
-const handVel=[new THREE.Vector3(),new THREE.Vector3()];
-const hands=[];
-const grappleSurfaces=[];
-const raycaster=new THREE.Raycaster();
-const tmpQ=new THREE.Quaternion();
-const tmpV=new THREE.Vector3();
-const tmpV2=new THREE.Vector3();
+const velocity=new THREE.Vector3(), clock=new THREE.Clock();
+const hands=[], surfaces=[];
+const ray=new THREE.Raycaster(), q=new THREE.Quaternion(), tmp=new THREE.Vector3();
 
-const CFG={
-  maxSpeed:15,
-  groundAccel:1.0,
-  handGain:5.0,
-  handMax:20,
-  drag:.035,
-  airDrag:.012,
-  grappleRange:20,
-  spring:18,
-  damping:5.5,
-  minRope:.35
+const C={
+ maxSpeed:13, armAccel:8.5, armMax:18, armDrag:.045, airDrag:.012,
+ range:20, spring:20, damping:5.5, minRope:.4, releaseBoost:.12
 };
 
-function mat(c){return new THREE.MeshBasicMaterial({color:c});}
-const floorMat=mat(0x1c252d), wallMat=mat(0x2b3740), cyanMat=mat(0x35d9ff);
-const orangeMat=mat(0xffa23d), darkMat=mat(0x111820), bodyMat=mat(0x33424d), visorMat=mat(0x78e9ff);
+function M(c){return new THREE.MeshBasicMaterial({color:c})}
+const floorM=M(0x202b33), wallM=M(0x34434d), blueM=M(0x39d9ff), safeM=M(0x617783), goalM=M(0xffa343), darkM=M(0x101820), bodyM=M(0x354651), visorM=M(0x7ceaff), handM=M(0xffa343);
 
-function box(x,y,z,sx,sy,sz,m=floorMat,grapple=true){
-  const o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);
-  o.position.set(x,y,z); o.userData.grapple=grapple;
-  scene.add(o); if(grapple) grappleSurfaces.push(o);
-  return o;
+function addBox(x,y,z,sx,sy,sz,m=floorM,grapple=true){
+ const o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m); o.position.set(x,y,z); o.userData.grapple=grapple;
+ scene.add(o); if(grapple) surfaces.push(o); return o;
 }
-function ring(x,y,z,r=.5){
-  const o=new THREE.Mesh(new THREE.TorusGeometry(r,.035,8,24),cyanMat);
-  o.position.set(x,y,z); o.rotation.x=Math.PI/2; scene.add(o);
+function addRing(x,y,z,r=.45){
+ const o=new THREE.Mesh(new THREE.TorusGeometry(r,.035,8,24),blueM); o.position.set(x,y,z); o.rotation.x=Math.PI/2; scene.add(o);
 }
-function label(x,y,z,text){
-  const c=document.createElement("canvas");c.width=512;c.height=96;
-  const g=c.getContext("2d");g.fillStyle="#0a1015";g.fillRect(0,0,512,96);
-  g.fillStyle="#c9f6ff";g.font="bold 30px sans-serif";g.textAlign="center";g.fillText(text,256,60);
-  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));
-  s.position.set(x,y,z);s.scale.set(4,.75,1);scene.add(s);
+function sign(x,y,z,text){
+ const c=document.createElement("canvas");c.width=512;c.height=100;const g=c.getContext("2d");
+ g.fillStyle="#0b1218";g.fillRect(0,0,512,100);g.fillStyle="#c9f7ff";g.font="bold 30px sans-serif";g.textAlign="center";g.fillText(text,256,64);
+ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));s.position.set(x,y,z);s.scale.set(4,.78,1);scene.add(s);
 }
 
-/* Complete movement test map */
-box(0,-.3,0,18,.6,18); // hub
-box(0,0,-13,8,.4,16); box(-4,2,-13,.35,4,16); box(4,2,-13,.35,4,16);
-for(let i=0;i<8;i++) ring(-3+i*.85,1.5,-7-i*1.4,.4);
-label(0,3,-6,"ARM MOVEMENT");
+/* ===== TEST MAP ===== */
+addBox(0,-.3,0,18,.6,18); addBox(0,-.3,-15,10,.6,20); addBox(-5,2,-15,.35,4,20);addBox(5,2,-15,.35,4,20);
+for(let i=0;i<9;i++)addRing(-3.5+i*.9,1.5,-8-i*1.5,.38); sign(0,3,-7,"01  HAND LOCOMOTION");
 
-box(-13,0,-5,8,.5,16); box(-17,2,-5,.35,4,16); box(-9,2,-5,.35,4,16);
-for(let i=0;i<7;i++) box(-13,1+i*.55,-10+i*1.5,2,.3,2,wallMat);
-label(-13,3,-10,"WALL PUSH");
+addBox(-14,-.3,-6,8,.6,18);addBox(-18,2,-6,.35,4,18);addBox(-10,2,-6,.35,4,18);
+for(let i=0;i<6;i++)addBox(-14,1+i*.65,-11+i*2,2.2,.35,2.2,safeM); sign(-14,3,-11,"02  WALL PUSH");
 
-box(0,-.3,-32,18,.6,20);box(-9,2,-32,.35,4,20);box(9,2,-32,.35,4,20);
-for(let i=0;i<10;i++){let x=i%2?6:-6,y=1.5+(i%5)*1.3,z=-23-i*1.8;box(x,y,z,1.2,.35,1.2,cyanMat);ring(x,y+.6,z,.42)}
-label(0,3,-23,"GRAPPLE CANYON");
+addBox(0,-.3,-34,18,.6,20);addBox(-9,2,-34,.35,4,20);addBox(9,2,-34,.35,4,20);
+for(let i=0;i<10;i++){let x=i%2?6:-6,y=1.5+(i%5)*1.25,z=-25-i*1.7;addBox(x,y,z,1.3,.35,1.3,blueM);addRing(x,y+.65,z,.43)}
+sign(0,3,-25,"03  GRAPPLE CANYON");
 
-box(15,-.3,-28,10,.6,10);
-for(let i=0;i<7;i++){let a=i*Math.PI*2/7,x=15+3*Math.cos(a),z=-28+3*Math.sin(a);box(x,1.2+i*1.1,z,.9,.4,.9,cyanMat);ring(x,1.8+i*1.1,z,.4)}
-box(15,9,-28,5,.4,5,orangeMat);label(15,3,-24,"VERTICAL");
+addBox(15,-.3,-30,10,.6,10);
+for(let i=0;i<8;i++){let a=i*Math.PI/4,x=15+3.1*Math.cos(a),z=-30+3.1*Math.sin(a);addBox(x,1+i*.95,z,.9,.4,.9,blueM);addRing(x,1.6+i*.95,z,.4)}
+addBox(15,8,-30,5,.4,5,goalM);sign(15,3,-26,"04  VERTICAL");
 
-box(0,-.3,-51,10,.6,28);box(-5,2,-51,.35,4,28);box(5,2,-51,.35,4,28);
-for(let i=0;i<8;i++)ring(0,1.6,-39-i*2.5,.48);
-box(0,0,-65,8,.5,5,orangeMat);label(0,2,-65,"FINISH");
+addBox(0,-.3,-52,10,.6,28);addBox(-5,2,-52,.35,4,28);addBox(5,2,-52,.35,4,28);
+for(let i=0;i<8;i++)addRing(0,1.7,-41-i*2.7,.48);
+addBox(0,0,-67,8,.5,5,goalM);sign(0,2,-67,"05  FINISH");
 
-/* Visible player body. Camera is at head height; body sits below it. */
-const player=new THREE.Group();
+/* ===== PLAYER =====
+   Body is intentionally below headset; hands/arms are controller driven.
+*/
+const player=new THREE.Group(); rig.add(player);
 function capsule(r,l,m){return new THREE.Mesh(new THREE.CapsuleGeometry(r,l,4,8),m)}
-const torso=capsule(.22,.42,bodyMat);torso.position.y=-.48;player.add(torso);
-const head=capsule(.16,.05,darkMat);head.position.y=-.05;player.add(head);
-const visor=new THREE.Mesh(new THREE.BoxGeometry(.2,.07,.035),visorMat);visor.position.set(0,-.04,-.145);player.add(visor);
-const hip=new THREE.Mesh(new THREE.BoxGeometry(.28,.14,.2),darkMat);hip.position.y=-.77;player.add(hip);
-const legL=capsule(.075,.32,bodyMat),legR=capsule(.075,.32,bodyMat);legL.position.set(-.1,-1.02,0);legR.position.set(.1,-1.02,0);player.add(legL,legR);
-const bootL=new THREE.Mesh(new THREE.BoxGeometry(.13,.1,.24),darkMat),bootR=bootL.clone();bootL.position.set(-.1,-1.25,-.04);bootR.position.set(.1,-1.25,-.04);player.add(bootL,bootR);
-rig.add(player);
+const torso=capsule(.22,.42,bodyM);torso.position.y=-.52;player.add(torso);
+const head=capsule(.16,.06,darkM);head.position.y=-.08;player.add(head);
+const visor=new THREE.Mesh(new THREE.BoxGeometry(.2,.07,.035),visorM);visor.position.set(0,-.07,-.145);player.add(visor);
+const hip=new THREE.Mesh(new THREE.BoxGeometry(.28,.14,.2),darkM);hip.position.y=-.82;player.add(hip);
+const l1=capsule(.075,.32,bodyM),r1=capsule(.075,.32,bodyM);l1.position.set(-.1,-1.08,0);r1.position.set(.1,-1.08,0);player.add(l1,r1);
+const boot1=new THREE.Mesh(new THREE.BoxGeometry(.13,.1,.24),darkM),boot2=boot1.clone();boot1.position.set(-.1,-1.3,-.04);boot2.position.set(.1,-1.3,-.04);player.add(boot1,boot2);
 
-/* Tracked arms are children of the rig, so they follow real controller poses. */
-function makeHand(i){
-  const g=new THREE.Group();
-  const upper=capsule(.055,.24,bodyMat), fore=capsule(.05,.24,darkMat);
-  const hand=new THREE.Mesh(new THREE.SphereGeometry(.075,10,8),orangeMat);
-  upper.position.y=-.16;fore.position.y=-.37;hand.position.y=-.55;
-  g.add(upper,fore,hand);rig.add(g);
-  return {group:g,upper,fore,hand,grappling:false,point:new THREE.Vector3(),rope:0,ropeLine:null};
+function createHand(){
+ const g=new THREE.Group(); const upper=capsule(.055,.24,bodyM),fore=capsule(.05,.24,darkM),palm=new THREE.Mesh(new THREE.SphereGeometry(.075,10,8),handM);
+ g.add(upper,fore,palm); scene.add(g);
+ return {g,upper,fore,palm,controller:null,last:new THREE.Vector3(),vel:new THREE.Vector3(),grappling:false,point:new THREE.Vector3(),rope:0,line:null};
 }
-hands.push(makeHand(0),makeHand(1));
+hands.push(createHand(),createHand());
 
-function setupController(i){
-  const c=renderer.xr.getController(i);
-  c.addEventListener("connected",e=>{c.userData.inputSource=e.data});
-  c.addEventListener("selectstart",()=>attach(i));
-  c.addEventListener("selectend",()=>release(i));
-  c.addEventListener("squeezestart",()=>attach(i));
-  c.addEventListener("squeezeend",()=>release(i));
-  scene.add(c); hands[i].controller=c;
-  return c;
+function controller(i){
+ const c=renderer.xr.getController(i);hands[i].controller=c;
+ c.addEventListener("connected",e=>c.userData.inputSource=e.data);
+ c.addEventListener("selectstart",()=>attach(i));c.addEventListener("selectend",()=>release(i));
+ c.addEventListener("squeezestart",()=>attach(i));c.addEventListener("squeezeend",()=>release(i));
+ scene.add(c);
 }
-setupController(0);setupController(1);
+controller(0);controller(1);
 
-function handWorld(i){
-  const p=new THREE.Vector3();hands[i].controller.getWorldPosition(p);return p;
-}
+function worldPos(c){const p=new THREE.Vector3();c.getWorldPosition(p);return p}
 function attach(i){
-  const h=hands[i];if(h.grappling)return;
-  const c=h.controller;if(!c)return;
-  const origin=handWorld(i),dir=new THREE.Vector3(0,0,-1);
-  c.getWorldQuaternion(tmpQ);dir.applyQuaternion(tmpQ).normalize();
-  raycaster.set(origin,dir);raycaster.far=CFG.grappleRange;
-  const hits=raycaster.intersectObjects(grappleSurfaces,true);
-  if(!hits.length)return; // no fake air grapple: every grapple has a real point
-  h.grappling=true;h.point.copy(hits[0].point);
-  h.rope=Math.max(CFG.minRope,origin.distanceTo(h.point));
-  const geo=new THREE.BufferGeometry().setFromPoints([origin,h.point]);
-  h.ropeLine=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x72eaff}));
-  scene.add(h.ropeLine);
+ const h=hands[i];if(h.grappling||!h.controller)return;
+ const origin=worldPos(h.controller),dir=new THREE.Vector3(0,0,-1);h.controller.getWorldQuaternion(q);dir.applyQuaternion(q).normalize();
+ ray.set(origin,dir);ray.far=C.range;
+ const hits=ray.intersectObjects(surfaces,true);if(!hits.length)return;
+ h.grappling=true;h.point.copy(hits[0].point);h.rope=Math.max(C.minRope,origin.distanceTo(h.point));
+ const geo=new THREE.BufferGeometry().setFromPoints([origin,h.point]);
+ h.line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x7beaff}));scene.add(h.line);
 }
 function release(i){
-  const h=hands[i];if(!h.grappling)return;
-  h.grappling=false;
-  if(h.ropeLine){scene.remove(h.ropeLine);h.ropeLine.geometry.dispose();h.ropeLine.material.dispose();h.ropeLine=null}
+ const h=hands[i];if(!h.grappling)return;
+ h.grappling=false;
+ velocity.addScaledVector(h.vel,C.releaseBoost);
+ if(h.line){scene.remove(h.line);h.line.geometry.dispose();h.line.material.dispose();h.line=null}
 }
 function updateHands(dt){
-  for(let i=0;i<2;i++){
-    const h=hands[i],p=handWorld(i);
-    handVel[i].copy(p).sub(lastPos[i]).multiplyScalar(1/Math.max(dt,.001));
-    lastPos[i].copy(p);
-    h.group.position.copy(p);
-    // Arms point from shoulders toward tracked hands.
-    const shoulder=new THREE.Vector3(i? .25:-.25,-.22,-.02); // local rig
-    const localHand=rig.worldToLocal(p.clone());
-    const armVec=localHand.clone().sub(shoulder),len=armVec.length();
-    if(len>.05){
-      const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),armVec.normalize());
-      h.upper.position.copy(shoulder).addScaledVector(armVec,len*.30);
-      h.upper.quaternion.copy(q);
-      h.fore.position.copy(shoulder).addScaledVector(armVec,len*.72);
-      h.fore.quaternion.copy(q);
-      h.hand.position.copy(localHand);
-    }
-    // Physical arm propulsion: only a backward stroke relative to head view.
-    const forward=new THREE.Vector3(0,0,-1).applyQuaternion(camera.getWorldQuaternion(tmpQ)).setY(0).normalize();
-    const backward=forward.clone().negate();
-    const rear=Math.max(0,handVel[i].dot(backward));
-    const lateral=handVel[i].clone().addScaledVector(backward,-handVel[i].dot(backward));
-    const power=Math.min(CFG.handMax,Math.pow(rear,1.25)*CFG.handGain);
-    velocity.addScaledVector(forward,power*dt);
-    // Small steering from asymmetric strokes.
-    velocity.x+=lateral.x*0.025*dt;
-    velocity.z+=lateral.z*0.025*dt;
+ const headQ=camera.getWorldQuaternion(q);
+ const forward=new THREE.Vector3(0,0,-1).applyQuaternion(headQ);forward.y=0;if(forward.lengthSq()<.001)forward.set(0,0,-1);forward.normalize();
+ const back=forward.clone().negate();
 
-    if(h.grappling){
-      const ropeVec=h.point.clone().sub(p),d=ropeVec.length();
-      if(d>h.rope){
-        const n=ropeVec.normalize();
-        const stretch=d-h.rope;
-        const radial=velocity.dot(n);
-        const force=stretch*CFG.spring-radial*CFG.damping;
-        velocity.addScaledVector(n,force*dt);
-      }
-      if(h.ropeLine){
-        h.ropeLine.geometry.setFromPoints([p,h.point]);
-      }
-    }
+ for(let i=0;i<2;i++){
+  const h=hands[i]; if(!h.controller)continue;
+  const p=worldPos(h.controller);
+  h.vel.copy(p).sub(h.last).multiplyScalar(1/Math.max(dt,.001));h.last.copy(p);
+
+  // Arm display follows real controller position.
+  const local=rig.worldToLocal(p.clone());
+  const shoulder=new THREE.Vector3(i? .25:-.25,-.22,-.03);
+  const av=local.clone().sub(shoulder),len=av.length();
+  if(len>.08){
+   const dir=av.clone().normalize(),rot=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+   h.upper.position.copy(shoulder).addScaledVector(dir,len*.27);h.upper.quaternion.copy(rot);
+   h.fore.position.copy(shoulder).addScaledVector(dir,len*.68);h.fore.quaternion.copy(rot);
+   h.palm.position.copy(local);
   }
+
+  // Physical hand propulsion.
+  const rear=Math.max(0,h.vel.dot(back));
+  const accel=Math.min(C.armMax,Math.pow(rear,1.18)*C.armAccel);
+  velocity.addScaledVector(forward,accel*dt);
+
+  // Grapple constraint: only pull when rope is stretched, preserving tangential speed.
+  if(h.grappling){
+   const to=h.point.clone().sub(p),d=to.length();
+   if(d>h.rope){
+    const n=to.normalize(),stretch=d-h.rope,radial=velocity.dot(n);
+    const force=stretch*C.spring-radial*C.damping;
+    velocity.addScaledVector(n,force*dt);
+   }
+   if(h.line)h.line.geometry.setFromPoints([p,h.point]);
+  }
+ }
 }
-function updatePhysics(dt){
-  const drag=Math.pow(1-CFG.drag,dt*60);
-  velocity.multiplyScalar(drag);
-  if(velocity.length()>CFG.maxSpeed)velocity.setLength(CFG.maxSpeed);
-  rig.position.addScaledVector(velocity,dt);
-  // Simple world bounds.
-  rig.position.x=THREE.MathUtils.clamp(rig.position.x,-8.2,8.2);
-  rig.position.z=THREE.MathUtils.clamp(rig.position.z,-67,8);
-  if(rig.position.y<0){rig.position.y=0;velocity.y=Math.max(0,velocity.y);}
+function physics(dt){
+ const drag=Math.pow(1-C.armDrag,dt*60);velocity.multiplyScalar(drag);
+ if(velocity.length()>C.maxSpeed)velocity.setLength(C.maxSpeed);
+ // Floor with a little gravity so jumps/launches feel physical.
+ velocity.y-=5.5*dt; rig.position.addScaledVector(velocity,dt);
+ if(rig.position.y<0){rig.position.y=0;if(velocity.y<0)velocity.y=0;}
+ rig.position.x=THREE.MathUtils.clamp(rig.position.x,-8.2,18);
+ rig.position.z=THREE.MathUtils.clamp(rig.position.z,-70,8);
 }
-function loop(){
-  const dt=Math.min(clock.getDelta(),.033);
-  updateHands(dt);
-  updatePhysics(dt);
-  const speed=velocity.length();
-  document.getElementById("hud").textContent=`SPEED ${speed.toFixed(1)} · L ${hands[0].grappling?"GRAPPLE":"—"} · R ${hands[1].grappling?"GRAPPLE":"—"}`;
-  renderer.render(scene,camera);
+function frame(){
+ const dt=Math.min(clock.getDelta(),.033);updateHands(dt);physics(dt);
+ const s=velocity.length();document.getElementById("hud").textContent=`SPEED ${s.toFixed(1)} · L ${hands[0].grappling?"GRAPPLE":"—"} · R ${hands[1].grappling?"GRAPPLE":"—"}`;
+ renderer.render(scene,camera);
 }
-renderer.setAnimationLoop(loop);
+renderer.setAnimationLoop(frame);
 
 document.getElementById("enter").onclick=async()=>{
-  if(!navigator.xr){alert("WebXR is not available in this browser.");return}
-  try{
-    const session=await navigator.xr.requestSession("immersive-vr",{requiredFeatures:["local-floor"]});
-    renderer.xr.setSession(session);
-    document.getElementById("ui").style.display="none";
-  }catch(e){alert("VR could not start: "+e.message)}
+ if(!navigator.xr){alert("WebXR is not available. Open this page in Quest Browser.");return}
+ try{
+  const session=await navigator.xr.requestSession("immersive-vr",{requiredFeatures:["local-floor"],optionalFeatures:["bounded-floor"]});
+  renderer.xr.setSession(session);document.getElementById("panel").style.display="none";
+ }catch(e){alert("VR start failed: "+e.message)}
 };
 addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
